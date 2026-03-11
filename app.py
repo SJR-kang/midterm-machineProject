@@ -13,6 +13,10 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialize session state for tweet input
+if 'tweet_input' not in st.session_state:
+    st.session_state.tweet_input = ""
+
 # Title and description
 st.title("🔍 AI-Powered Tweet Moderation System")
 st.markdown("""
@@ -111,25 +115,35 @@ st.header("📝 Tweet Analysis")
 # Create a nice layout
 col1, col2, col3 = st.columns([1, 6, 1])
 with col2:
-    # Tweet input
+    # Tweet input - using session state
     tweet_input = st.text_area(
         "Enter your tweet to analyze:",
         height=150,
-        placeholder="Type or paste a tweet here..."
+        placeholder="Type or paste a tweet here...",
+        value=st.session_state.tweet_input,
+        key="tweet_input_area"
     )
+    
+    # Update session state when user types
+    st.session_state.tweet_input = tweet_input
     
     # Center the analyze button
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
         analyze_button = st.button("🔍 Analyze Tweet", type="primary", use_container_width=True)
     
-    if analyze_button and tweet_input:
+    # Function to analyze tweet
+    def analyze_tweet(tweet_text):
+        if not tweet_text:
+            st.warning("Please enter a tweet to analyze.")
+            return
+        
         with st.spinner("Analyzing..."):
             try:
                 # Make prediction
                 if model is not None and vectorizer is not None and scaler is not None:
                     # Use actual trained model
-                    tweet_vector = vectorizer.transform([tweet_input])
+                    tweet_vector = vectorizer.transform([tweet_text])
                     tweet_scaled = scaler.transform(tweet_vector)
                     pred_class = model.predict(tweet_scaled)[0]
                     
@@ -141,7 +155,7 @@ with col2:
                         confidence = 0.95
                 else:
                     # Rule-based fallback
-                    tweet_lower = tweet_input.lower()
+                    tweet_lower = tweet_text.lower()
                     threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb', 'kill you', 'going to kill']
                     hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
                     offense_words = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy']
@@ -201,13 +215,14 @@ with col2:
                 
                 # Show tweet that was analyzed
                 with st.expander("📝 Analyzed Tweet"):
-                    st.write(tweet_input)
+                    st.write(tweet_text)
                 
             except Exception as e:
                 st.error(f"Error analyzing tweet: {str(e)}")
     
-    elif analyze_button:
-        st.warning("Please enter a tweet to analyze.")
+    # Handle analyze button click
+    if analyze_button:
+        analyze_tweet(st.session_state.tweet_input)
     
     # Sample tweets for quick testing
     st.markdown("---")
@@ -225,16 +240,20 @@ with col2:
     for idx, (category, tweet) in enumerate(sample_tweets.items()):
         with sample_cols[idx]:
             if st.button(f"📋 {category}", key=f"sample_{idx}", use_container_width=True):
-                # Set the text area value (this is a workaround)
-                st.session_state['sample_tweet'] = tweet
+                # Set the session state and rerun
+                st.session_state.tweet_input = tweet
                 st.rerun()
     
-    # Check if we have a sample tweet to load
-    if 'sample_tweet' in st.session_state:
-        tweet_input = st.session_state['sample_tweet']
-        # Clear it so it doesn't persist
-        del st.session_state['sample_tweet']
-        st.rerun()
+    # If there's a tweet in session state from sample button, analyze it automatically
+    if 'auto_analyze' not in st.session_state:
+        st.session_state.auto_analyze = False
+    
+    # Check if we should auto-analyze (after sample button click)
+    if st.session_state.tweet_input and not analyze_button and not st.session_state.auto_analyze:
+        st.session_state.auto_analyze = True
+        analyze_tweet(st.session_state.tweet_input)
+    elif not st.session_state.tweet_input:
+        st.session_state.auto_analyze = False
 
 # Footer with policy guidelines
 st.markdown("---")
