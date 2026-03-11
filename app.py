@@ -17,7 +17,7 @@ st.set_page_config(
 
 # GitHub raw URLs for your files
 # Replace these with your actual GitHub raw URLs
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR_Kang/midterm-machineProject/main/"
 CSV_URL = GITHUB_RAW_BASE + "Tweets.csv"
 MODEL_BASE_URL = GITHUB_RAW_BASE + "models/"
 
@@ -371,4 +371,5 @@ for idx, (category, tweet) in enumerate(sample_tweets.items()):
                     st.error("🚫 Class 3 - Hide and warn user")
                 else:
                     st.error("🔴 Class 4 - Remove and alert moderators")
+
 
