@@ -15,9 +15,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# GitHub raw URLs for your files
-# Replace these with your actual GitHub raw URLs
-# GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR_Kang/midterm-machineProject/main/"
+# GitHub raw URLs for your files - UNCOMMENT AND FIX THESE
+# GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR-Kang/midterm-machineProject/main/"
 # CSV_URL = GITHUB_RAW_BASE + "Tweets.csv"
 # MODEL_BASE_URL = GITHUB_RAW_BASE + "models/"
 
@@ -28,25 +27,54 @@ This application analyzes tweets for harmful content and provides automated mode
 Enter a tweet below to get instant analysis and suggested actions.
 """)
 
-# Load data
+# Function to load data from GitHub
 @st.cache_data
-def load_data():
+def load_data_from_github():
+    """Load data from GitHub raw URL"""
     try:
-        # Try loading from different paths
-        possible_paths = ['Tweets.csv', 'data/Tweets.csv']
+        # Try loading from GitHub first (uncomment when ready)
+        # response = requests.get(CSV_URL)
+        # response.raise_for_status()
+        # df = pd.read_csv(StringIO(response.text))
+        # return df
+        
+        # For now, try local paths
+        possible_paths = ['Tweets.csv', 'data/Tweets.csv', 'Tweets_reclassified.csv']
+        for path in possible_paths:
+            if os.path.exists(path):
+                st.sidebar.success(f"✅ Loaded data from {path}")
+                return pd.read_csv(path)
+        
+        st.sidebar.warning("No local data file found")
+        return None
+    except Exception as e:
+        st.sidebar.error(f"Error loading data: {str(e)}")
+        return None
+
+# Function to load data from local (backup method)
+@st.cache_data
+def load_local_data():
+    """Load data from local paths as backup"""
+    try:
+        possible_paths = ['Tweets.csv', 'data/Tweets.csv', 'Tweets_reclassified.csv']
         for path in possible_paths:
             if os.path.exists(path):
                 return pd.read_csv(path)
         return None
     except:
         return None
-# Load the saved models (from local or GitHub)
+
+# Load the saved models
 @st.cache_resource
 def load_models():
-    models = {}
-    
-    # Try loading from local models folder first
+    """Load trained models from local folder"""
     try:
+        # Check if models folder exists
+        if not os.path.exists('models'):
+            st.sidebar.error("❌ 'models' folder not found!")
+            return None, None, None, None
+        
+        # Load all model files
         vectorizer = joblib.load('models/vectorizer.pkl')
         scaler = joblib.load('models/scaler.pkl')
         model = joblib.load('models/random_forest_model.pkl')
@@ -55,26 +83,29 @@ def load_models():
         st.sidebar.success("✅ Models loaded from local folder")
         return vectorizer, scaler, model, policy
         
-    except FileNotFoundError:
-        st.sidebar.warning("Local models not found. Checking GitHub...")
-        
-        # Try loading from GitHub (if you've uploaded models there too)
-        try:
-            # Note: You'll need to upload your .pkl files to GitHub
-            # and use raw URLs for them as well
-            st.sidebar.error("""
-            GitHub model loading requires .pkl files to be uploaded.
-            Please ensure models are in the local 'models' folder.
-            """)
-            return None, None, None, None
-            
-        except Exception as e:
-            st.sidebar.error(f"Could not load models: {str(e)}")
-            return None, None, None, None
+    except FileNotFoundError as e:
+        st.sidebar.error(f"❌ Model file not found: {str(e)}")
+        return None, None, None, None
+    except Exception as e:
+        st.sidebar.error(f"❌ Error loading models: {str(e)}")
+        return None, None, None, None
+
+# Recommendation policy (define as fallback)
+DEFAULT_POLICY = {
+    0: {"action": "Allow content", "priority": "Low", "reason": "No abusive language detected"},
+    1: {"action": "Allow content", "priority": "Low", "reason": "No abusive language detected"},
+    2: {"action": "Flag for moderator review", "priority": "Medium", "reason": "Offensive language detected"},
+    3: {"action": "Hide content and warn user", "priority": "High", "reason": "Hate speech detected"},
+    4: {"action": "Remove content and alert moderators", "priority": "Critical", "reason": "Threatening or aggressive message detected"},
+    5: {"action": "Temporarily hide and investigate", "priority": "High", "reason": "Other abusive behavior detected"}
+}
 
 # Load data and models
-df_github = load_data_from_github()
-vectorizer, scaler, model, recommendation_policy = load_models()
+df_github = load_data_from_github()  # Fixed: now calling the correct function
+vectorizer, scaler, model, loaded_policy = load_models()
+
+# Use loaded policy or default
+recommendation_policy = loaded_policy if loaded_policy is not None else DEFAULT_POLICY
 
 # Sidebar for information
 with st.sidebar:
@@ -94,31 +125,39 @@ with st.sidebar:
     else:
         st.warning("⚠️ Using rule-based fallback")
     
-    # Dataset Statistics from GitHub CSV
+    # Dataset Statistics
     st.header("📁 Dataset Statistics")
     
     if df_github is not None:
-        class_counts = df_github['label'].value_counts().sort_index()
-        
-        st.write("**Class Distribution:**")
-        class_dist_df = pd.DataFrame({
-            'Class': class_counts.index,
-            'Count': class_counts.values
-        })
-        st.dataframe(class_dist_df)
-        
-        # Create pie chart from actual data
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.pie(class_counts.values, labels=class_counts.index, autopct='%1.1f%%')
-        ax.set_title('Training Data Distribution')
-        st.pyplot(fig)
+        # Check if 'label' column exists
+        if 'label' in df_github.columns:
+            class_counts = df_github['label'].value_counts().sort_index()
+            
+            st.write("**Class Distribution:**")
+            class_dist_df = pd.DataFrame({
+                'Class': class_counts.index,
+                'Count': class_counts.values
+            })
+            st.dataframe(class_dist_df)
+            
+            # Create pie chart
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.pie(class_counts.values, labels=class_counts.index, autopct='%1.1f%%')
+            ax.set_title('Training Data Distribution')
+            st.pyplot(fig)
+        else:
+            st.write("**Available columns:**")
+            st.write(df_github.columns.tolist())
         
         # Show basic stats
         st.write("**Dataset Info:**")
-        st.write(f"Total tweets: {len(df_github)}")
-        st.write(f"Features: {df_github.columns.tolist()}")
+        st.write(f"Total rows: {len(df_github)}")
     else:
-        st.warning("Could not load dataset from GitHub")
+        st.warning("No dataset loaded. Using sample data.")
+        # Show sample distribution
+        sample_counts = {'0': 10389, '2': 514, '3': 123, '4': 778}
+        st.write("**Sample Class Distribution:**")
+        st.json(sample_counts)
 
 # Main content area
 col1, col2 = st.columns([1, 1])
@@ -128,7 +167,7 @@ with col1:
     
     input_method = st.radio(
         "Choose input method:",
-        ["Single Tweet", "Batch Analysis (from GitHub)", "Upload CSV"]
+        ["Single Tweet", "Batch Analysis (from file)", "Upload CSV"]
     )
     
     if input_method == "Single Tweet":
@@ -142,7 +181,7 @@ with col1:
             if tweet_input:
                 with st.spinner("Analyzing..."):
                     try:
-                        if model is not None:
+                        if model is not None and vectorizer is not None and scaler is not None:
                             # Use actual trained model
                             tweet_vector = vectorizer.transform([tweet_input])
                             tweet_scaled = scaler.transform(tweet_vector)
@@ -157,11 +196,15 @@ with col1:
                         else:
                             # Rule-based fallback
                             tweet_lower = tweet_input.lower()
-                            if any(word in tweet_lower for word in ['kill', 'die', 'murder', 'shoot', 'bomb']):
+                            threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb', 'kill you', 'going to kill']
+                            hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
+                            offense_words = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy']
+                            
+                            if any(word in tweet_lower for word in threat_words):
                                 pred_class = 4
-                            elif any(word in tweet_lower for word in ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead']):
+                            elif any(word in tweet_lower for word in hate_words):
                                 pred_class = 3
-                            elif any(word in tweet_lower for word in ['fuck', 'shit', 'bitch', 'cunt', 'asshole']):
+                            elif any(word in tweet_lower for word in offense_words):
                                 pred_class = 2
                             else:
                                 pred_class = 0
@@ -201,70 +244,49 @@ with col1:
             else:
                 st.warning("Please enter a tweet to analyze.")
     
-    elif input_method == "Batch Analysis (from GitHub)":
-        st.write("Analyze tweets directly from the GitHub repository.")
+    elif input_method == "Batch Analysis (from file)":
+        st.write("Select a file to analyze in batch.")
         
-        if df_github is not None:
-            st.write("**Preview of GitHub dataset:**")
-            st.dataframe(df_github.head(10))
-            
-            if st.button("Analyze All Tweets from GitHub"):
-                with st.spinner(f"Analyzing {len(df_github)} tweets..."):
-                    if model is not None:
-                        # Process all tweets
-                        results = []
-                        for tweet in df_github['tweet'].head(100):  # Limit to 100 for demo
-                            tweet_vector = vectorizer.transform([str(tweet)])
-                            tweet_scaled = scaler.transform(tweet_vector)
-                            pred = model.predict(tweet_scaled)[0]
-                            results.append({
-                                'Tweet': str(tweet)[:50] + "...",  # Truncate for display
-                                'Predicted': pred,
-                                'Action': recommendation_policy[pred]['action'][:20]
-                            })
-                        
-                        results_df = pd.DataFrame(results)
-                        st.success(f"✅ Analyzed {len(results_df)} tweets!")
-                        st.dataframe(results_df)
-                        
-                        # Show distribution
-                        st.write("**Prediction Distribution:**")
-                        dist_df = results_df['Predicted'].value_counts().reset_index()
-                        dist_df.columns = ['Class', 'Count']
-                        st.dataframe(dist_df)
-                    else:
-                        st.error("Model not loaded")
-        else:
-            st.error("GitHub dataset not available")
-    
-    else:  # Upload CSV
-        st.write("Upload your own CSV file with tweets to analyze.")
-        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+        # File selection
+        available_files = []
+        if os.path.exists('Tweets.csv'):
+            available_files.append('Tweets.csv')
+        if os.path.exists('Tweets_reclassified.csv'):
+            available_files.append('Tweets_reclassified.csv')
+        if os.path.exists('data/Tweets.csv'):
+            available_files.append('data/Tweets.csv')
         
-        if uploaded_file is not None:
-            df_batch = pd.read_csv(uploaded_file)
-            st.write("Preview of uploaded data:")
-            st.dataframe(df_batch.head())
+        if available_files:
+            selected_file = st.selectbox("Choose a file:", available_files)
             
-            # Assume first column contains tweets
-            tweet_column = st.selectbox(
-                "Select the column containing tweets:",
-                df_batch.columns.tolist()
-            )
-            
-            if st.button("Analyze Uploaded Batch"):
+            if st.button(f"Analyze {selected_file}"):
+                df_batch = pd.read_csv(selected_file)
+                st.write(f"**Preview of {selected_file}:**")
+                st.dataframe(df_batch.head(10))
+                
                 with st.spinner(f"Analyzing {len(df_batch)} tweets..."):
                     if model is not None:
+                        # Process tweets
                         results = []
-                        for tweet in df_batch[tweet_column].head(100):  # Limit for demo
-                            tweet_vector = vectorizer.transform([str(tweet)])
-                            tweet_scaled = scaler.transform(tweet_vector)
-                            pred = model.predict(tweet_scaled)[0]
-                            results.append({
-                                'Tweet': str(tweet)[:50] + "...",
-                                'Predicted': pred,
-                                'Action': recommendation_policy[pred]['action'][:20]
-                            })
+                        # Determine which column has tweets
+                        text_column = 'tweet' if 'tweet' in df_batch.columns else df_batch.columns[0]
+                        
+                        for idx, tweet in enumerate(df_batch[text_column].head(50)):  # Limit to 50
+                            try:
+                                tweet_vector = vectorizer.transform([str(tweet)])
+                                tweet_scaled = scaler.transform(tweet_vector)
+                                pred = model.predict(tweet_scaled)[0]
+                                results.append({
+                                    'Tweet': str(tweet)[:50] + "..." if len(str(tweet)) > 50 else str(tweet),
+                                    'Predicted': pred,
+                                    'Action': recommendation_policy[pred]['action'][:20]
+                                })
+                            except:
+                                results.append({
+                                    'Tweet': str(tweet)[:50] + "...",
+                                    'Predicted': 'Error',
+                                    'Action': 'Error'
+                                })
                         
                         results_df = pd.DataFrame(results)
                         st.success(f"✅ Analyzed {len(results_df)} tweets!")
@@ -275,13 +297,66 @@ with col1:
                         st.download_button(
                             label="📥 Download Results",
                             data=csv,
-                            file_name="moderation_results.csv",
+                            file_name="batch_results.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.error("Model not loaded")
+        else:
+            st.warning("No data files found in repository")
+    
+    else:  # Upload CSV
+        st.write("Upload your own CSV file with tweets to analyze.")
+        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+        
+        if uploaded_file is not None:
+            df_batch = pd.read_csv(uploaded_file)
+            st.write("Preview of uploaded data:")
+            st.dataframe(df_batch.head())
+            
+            # Let user select the tweet column
+            tweet_column = st.selectbox(
+                "Select the column containing tweets:",
+                df_batch.columns.tolist()
+            )
+            
+            if st.button("Analyze Uploaded Batch"):
+                with st.spinner(f"Analyzing {len(df_batch)} tweets..."):
+                    if model is not None:
+                        results = []
+                        for idx, tweet in enumerate(df_batch[tweet_column].head(50)):  # Limit to 50
+                            try:
+                                tweet_vector = vectorizer.transform([str(tweet)])
+                                tweet_scaled = scaler.transform(tweet_vector)
+                                pred = model.predict(tweet_scaled)[0]
+                                results.append({
+                                    'Tweet': str(tweet)[:50] + "..." if len(str(tweet)) > 50 else str(tweet),
+                                    'Predicted': pred,
+                                    'Action': recommendation_policy[pred]['action'][:20]
+                                })
+                            except:
+                                results.append({
+                                    'Tweet': str(tweet)[:50] + "...",
+                                    'Predicted': 'Error',
+                                    'Action': 'Error'
+                                })
+                        
+                        results_df = pd.DataFrame(results)
+                        st.success(f"✅ Analyzed {len(results_df)} tweets!")
+                        st.dataframe(results_df)
+                        
+                        # Download button
+                        csv = results_df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Results",
+                            data=csv,
+                            file_name="upload_results.csv",
                             mime="text/csv"
                         )
                     else:
                         # Simulated results
                         results_df = pd.DataFrame({
-                            'Tweet': df_batch[tweet_column].head(10),
+                            'Tweet': df_batch[tweet_column].head(10).astype(str).str[:50] + "...",
                             'Predicted': [2, 0, 3, 4, 2, 0, 3, 2, 4, 0][:10],
                             'Action': ['Flag', 'Allow', 'Hide', 'Remove', 'Flag', 'Allow', 'Hide', 'Flag', 'Remove', 'Allow'][:10]
                         })
@@ -355,12 +430,15 @@ for idx, (category, tweet) in enumerate(sample_tweets.items()):
         st.write(f"**{category}:**")
         st.code(tweet)
         if st.button(f"Test {category}", key=f"test_{idx}"):
-            if model is not None:
-                tweet_vector = vectorizer.transform([tweet])
-                tweet_scaled = scaler.transform(tweet_vector)
-                pred = model.predict(tweet_scaled)[0]
-                policy = recommendation_policy[pred]
-                st.info(f"Class {pred}: {policy['action']}")
+            if model is not None and vectorizer is not None:
+                try:
+                    tweet_vector = vectorizer.transform([tweet])
+                    tweet_scaled = scaler.transform(tweet_vector)
+                    pred = model.predict(tweet_scaled)[0]
+                    policy = recommendation_policy.get(pred, recommendation_policy[0])
+                    st.info(f"Class {pred}: {policy['action']}")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
             else:
                 # Simulated
                 if category == "Clean":
@@ -371,6 +449,3 @@ for idx, (category, tweet) in enumerate(sample_tweets.items()):
                     st.error("🚫 Class 3 - Hide and warn user")
                 else:
                     st.error("🔴 Class 4 - Remove and alert moderators")
-
-
-
