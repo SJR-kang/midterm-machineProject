@@ -17,9 +17,9 @@ st.set_page_config(
 
 # GitHub raw URLs for your files
 # Replace these with your actual GitHub raw URLs
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR_Kang/midterm-machineProject/main/"
-CSV_URL = GITHUB_RAW_BASE + "Tweets.csv"
-MODEL_BASE_URL = GITHUB_RAW_BASE + "models/"
+# GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR_Kang/midterm-machineProject/main/"
+# CSV_URL = GITHUB_RAW_BASE + "Tweets.csv"
+# MODEL_BASE_URL = GITHUB_RAW_BASE + "models/"
 
 # Title and description
 st.title("🔍 AI-Powered Tweet Moderation System")
@@ -28,18 +28,18 @@ This application analyzes tweets for harmful content and provides automated mode
 Enter a tweet below to get instant analysis and suggested actions.
 """)
 
-# Function to load CSV from GitHub
-@st.cache_data  # Cache the data so it doesn't reload every time
-def load_data_from_github():
+# Load data
+@st.cache_data
+def load_data():
     try:
-        response = requests.get(CSV_URL)
-        response.raise_for_status()
-        df = pd.read_csv(StringIO(response.text))
-        return df
-    except Exception as e:
-        st.error(f"Error loading data from GitHub: {str(e)}")
+        # Try loading from different paths
+        possible_paths = ['Tweets.csv', 'data/Tweets.csv']
+        for path in possible_paths:
+            if os.path.exists(path):
+                return pd.read_csv(path)
         return None
-
+    except:
+        return None
 # Load the saved models (from local or GitHub)
 @st.cache_resource
 def load_models():
@@ -371,5 +371,6 @@ for idx, (category, tweet) in enumerate(sample_tweets.items()):
                     st.error("🚫 Class 3 - Hide and warn user")
                 else:
                     st.error("🔴 Class 4 - Remove and alert moderators")
+
 
 
