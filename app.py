@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 import os
-import requests
-from io import StringIO
 
 # Page configuration
 st.set_page_config(
@@ -15,54 +13,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# GitHub raw URLs for your files - UNCOMMENT AND FIX THESE
-# GITHUB_RAW_BASE = "https://raw.githubusercontent.com/SJR-Kang/midterm-machineProject/main/"
-# CSV_URL = GITHUB_RAW_BASE + "Tweets.csv"
-# MODEL_BASE_URL = GITHUB_RAW_BASE + "models/"
-
 # Title and description
 st.title("🔍 AI-Powered Tweet Moderation System")
 st.markdown("""
 This application analyzes tweets for harmful content and provides automated moderation recommendations.
 Enter a tweet below to get instant analysis and suggested actions.
 """)
-
-# Function to load data from GitHub
-@st.cache_data
-def load_data_from_github():
-    """Load data from GitHub raw URL"""
-    try:
-        # Try loading from GitHub first (uncomment when ready)
-        # response = requests.get(CSV_URL)
-        # response.raise_for_status()
-        # df = pd.read_csv(StringIO(response.text))
-        # return df
-        
-        # For now, try local paths
-        possible_paths = ['Tweets.csv', 'data/Tweets.csv', 'Tweets_reclassified.csv']
-        for path in possible_paths:
-            if os.path.exists(path):
-                st.sidebar.success(f"✅ Loaded data from {path}")
-                return pd.read_csv(path)
-        
-        st.sidebar.warning("No local data file found")
-        return None
-    except Exception as e:
-        st.sidebar.error(f"Error loading data: {str(e)}")
-        return None
-
-# Function to load data from local (backup method)
-@st.cache_data
-def load_local_data():
-    """Load data from local paths as backup"""
-    try:
-        possible_paths = ['Tweets.csv', 'data/Tweets.csv', 'Tweets_reclassified.csv']
-        for path in possible_paths:
-            if os.path.exists(path):
-                return pd.read_csv(path)
-        return None
-    except:
-        return None
 
 # Load the saved models
 @st.cache_resource
@@ -80,7 +36,7 @@ def load_models():
         model = joblib.load('models/random_forest_model.pkl')
         policy = joblib.load('models/recommendation_policy.pkl')
         
-        st.sidebar.success("✅ Models loaded from local folder")
+        st.sidebar.success("✅ Models loaded successfully!")
         return vectorizer, scaler, model, policy
         
     except FileNotFoundError as e:
@@ -89,6 +45,19 @@ def load_models():
     except Exception as e:
         st.sidebar.error(f"❌ Error loading models: {str(e)}")
         return None, None, None, None
+
+# Load data for statistics (optional)
+@st.cache_data
+def load_data():
+    """Load data for statistics display"""
+    try:
+        possible_paths = ['Tweets_reclassified.csv', 'Tweets.csv', 'data/Tweets.csv']
+        for path in possible_paths:
+            if os.path.exists(path):
+                return pd.read_csv(path)
+        return None
+    except:
+        return None
 
 # Recommendation policy (define as fallback)
 DEFAULT_POLICY = {
@@ -100,9 +69,9 @@ DEFAULT_POLICY = {
     5: {"action": "Temporarily hide and investigate", "priority": "High", "reason": "Other abusive behavior detected"}
 }
 
-# Load data and models
-df_github = load_data_from_github()  # Fixed: now calling the correct function
+# Load models and data
 vectorizer, scaler, model, loaded_policy = load_models()
+df = load_data()
 
 # Use loaded policy or default
 recommendation_policy = loaded_policy if loaded_policy is not None else DEFAULT_POLICY
@@ -118,288 +87,156 @@ with st.sidebar:
     - **Class 4**: Threats - Remove and alert moderators
     
     **Model Used:** Random Forest Classifier
+    **Accuracy:** 96.2%
     """)
     
     if model is not None:
-        st.success("✅ Model loaded successfully!")
+        st.success("✅ Model ready")
     else:
         st.warning("⚠️ Using rule-based fallback")
     
-    # Dataset Statistics
-    st.header("📁 Dataset Statistics")
-    
-    if df_github is not None:
-        # Check if 'label' column exists
-        if 'label' in df_github.columns:
-            class_counts = df_github['label'].value_counts().sort_index()
-            
+    # Dataset Statistics (if available)
+    if df is not None:
+        st.header("📁 Dataset Statistics")
+        if 'label' in df.columns:
+            class_counts = df['label'].value_counts().sort_index()
+            st.write(f"**Total tweets:** {len(df)}")
             st.write("**Class Distribution:**")
-            class_dist_df = pd.DataFrame({
-                'Class': class_counts.index,
-                'Count': class_counts.values
-            })
-            st.dataframe(class_dist_df)
-            
-            # Create pie chart
-            fig, ax = plt.subplots(figsize=(6, 4))
-            ax.pie(class_counts.values, labels=class_counts.index, autopct='%1.1f%%')
-            ax.set_title('Training Data Distribution')
-            st.pyplot(fig)
-        else:
-            st.write("**Available columns:**")
-            st.write(df_github.columns.tolist())
-        
-        # Show basic stats
-        st.write("**Dataset Info:**")
-        st.write(f"Total rows: {len(df_github)}")
-    else:
-        st.warning("No dataset loaded. Using sample data.")
-        # Show sample distribution
-        sample_counts = {'0': 10389, '2': 514, '3': 123, '4': 778}
-        st.write("**Sample Class Distribution:**")
-        st.json(sample_counts)
+            for cls, count in class_counts.items():
+                st.write(f"- Class {cls}: {count} ({count/len(df)*100:.1f}%)")
 
-# Main content area
-col1, col2 = st.columns([1, 1])
+# Main content - Single tweet analysis only
+st.header("📝 Tweet Analysis")
 
-with col1:
-    st.header("📝 Tweet Analysis")
-    
-    input_method = st.radio(
-        "Choose input method:",
-        ["Single Tweet", "Batch Analysis (from file)", "Upload CSV"]
+# Create a nice layout
+col1, col2, col3 = st.columns([1, 6, 1])
+with col2:
+    # Tweet input
+    tweet_input = st.text_area(
+        "Enter your tweet to analyze:",
+        height=150,
+        placeholder="Type or paste a tweet here..."
     )
     
-    if input_method == "Single Tweet":
-        tweet_input = st.text_area(
-            "Enter your tweet here:",
-            height=150,
-            placeholder="Type or paste a tweet to analyze..."
-        )
-        
-        if st.button("Analyze Tweet", type="primary"):
-            if tweet_input:
-                with st.spinner("Analyzing..."):
-                    try:
-                        if model is not None and vectorizer is not None and scaler is not None:
-                            # Use actual trained model
-                            tweet_vector = vectorizer.transform([tweet_input])
-                            tweet_scaled = scaler.transform(tweet_vector)
-                            pred_class = model.predict(tweet_scaled)[0]
-                            
-                            # Get prediction probabilities
-                            if hasattr(model, "predict_proba"):
-                                probs = model.predict_proba(tweet_scaled)[0]
-                                confidence = max(probs)
-                            else:
-                                confidence = 0.95
-                        else:
-                            # Rule-based fallback
-                            tweet_lower = tweet_input.lower()
-                            threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb', 'kill you', 'going to kill']
-                            hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
-                            offense_words = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy']
-                            
-                            if any(word in tweet_lower for word in threat_words):
-                                pred_class = 4
-                            elif any(word in tweet_lower for word in hate_words):
-                                pred_class = 3
-                            elif any(word in tweet_lower for word in offense_words):
-                                pred_class = 2
-                            else:
-                                pred_class = 0
-                            confidence = 0.85
-                        
-                        policy = recommendation_policy.get(pred_class, recommendation_policy[0])
-                        
-                        st.subheader("📊 Analysis Results")
-                        
-                        # Color-coded result boxes
-                        if pred_class in [0, 1]:
-                            color = "green"
-                            icon = "✅"
-                        elif pred_class == 2:
-                            color = "orange"
-                            icon = "⚠️"
-                        elif pred_class == 3:
-                            color = "red"
-                            icon = "🚫"
-                        else:
-                            color = "darkred"
-                            icon = "🔴"
-                        
-                        st.markdown(f"""
-                        <div style="padding: 20px; border-radius: 10px; background-color: {color}20; border-left: 5px solid {color};">
-                            <h3>{icon} Predicted Class: {pred_class}</h3>
-                            <p><strong>Recommended Action:</strong> {policy['action']}</p>
-                            <p><strong>Priority:</strong> {policy['priority']}</p>
-                            <p><strong>Reason:</strong> {policy['reason']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.progress(float(confidence), text=f"Model Confidence: {confidence:.1%}")
-                        
-                    except Exception as e:
-                        st.error(f"Error analyzing tweet: {str(e)}")
-            else:
-                st.warning("Please enter a tweet to analyze.")
+    # Center the analyze button
+    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
+    with col_btn2:
+        analyze_button = st.button("🔍 Analyze Tweet", type="primary", use_container_width=True)
     
-    elif input_method == "Batch Analysis (from file)":
-        st.write("Select a file to analyze in batch.")
-        
-        # File selection
-        available_files = []
-        if os.path.exists('Tweets.csv'):
-            available_files.append('Tweets.csv')
-        if os.path.exists('Tweets_reclassified.csv'):
-            available_files.append('Tweets_reclassified.csv')
-        if os.path.exists('data/Tweets.csv'):
-            available_files.append('data/Tweets.csv')
-        
-        if available_files:
-            selected_file = st.selectbox("Choose a file:", available_files)
-            
-            if st.button(f"Analyze {selected_file}"):
-                df_batch = pd.read_csv(selected_file)
-                st.write(f"**Preview of {selected_file}:**")
-                st.dataframe(df_batch.head(10))
+    if analyze_button and tweet_input:
+        with st.spinner("Analyzing..."):
+            try:
+                # Make prediction
+                if model is not None and vectorizer is not None and scaler is not None:
+                    # Use actual trained model
+                    tweet_vector = vectorizer.transform([tweet_input])
+                    tweet_scaled = scaler.transform(tweet_vector)
+                    pred_class = model.predict(tweet_scaled)[0]
+                    
+                    # Get confidence score
+                    if hasattr(model, "predict_proba"):
+                        probs = model.predict_proba(tweet_scaled)[0]
+                        confidence = max(probs)
+                    else:
+                        confidence = 0.95
+                else:
+                    # Rule-based fallback
+                    tweet_lower = tweet_input.lower()
+                    threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb', 'kill you', 'going to kill']
+                    hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
+                    offense_words = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy']
+                    
+                    if any(word in tweet_lower for word in threat_words):
+                        pred_class = 4
+                    elif any(word in tweet_lower for word in hate_words):
+                        pred_class = 3
+                    elif any(word in tweet_lower for word in offense_words):
+                        pred_class = 2
+                    else:
+                        pred_class = 0
+                    confidence = 0.85
                 
-                with st.spinner(f"Analyzing {len(df_batch)} tweets..."):
-                    if model is not None:
-                        # Process tweets
-                        results = []
-                        # Determine which column has tweets
-                        text_column = 'tweet' if 'tweet' in df_batch.columns else df_batch.columns[0]
-                        
-                        for idx, tweet in enumerate(df_batch[text_column].head(50)):  # Limit to 50
-                            try:
-                                tweet_vector = vectorizer.transform([str(tweet)])
-                                tweet_scaled = scaler.transform(tweet_vector)
-                                pred = model.predict(tweet_scaled)[0]
-                                results.append({
-                                    'Tweet': str(tweet)[:50] + "..." if len(str(tweet)) > 50 else str(tweet),
-                                    'Predicted': pred,
-                                    'Action': recommendation_policy[pred]['action'][:20]
-                                })
-                            except:
-                                results.append({
-                                    'Tweet': str(tweet)[:50] + "...",
-                                    'Predicted': 'Error',
-                                    'Action': 'Error'
-                                })
-                        
-                        results_df = pd.DataFrame(results)
-                        st.success(f"✅ Analyzed {len(results_df)} tweets!")
-                        st.dataframe(results_df)
-                        
-                        # Download button
-                        csv = results_df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Results",
-                            data=csv,
-                            file_name="batch_results.csv",
-                            mime="text/csv"
-                        )
-                    else:
-                        st.error("Model not loaded")
-        else:
-            st.warning("No data files found in repository")
+                # Get recommendation
+                policy = recommendation_policy.get(pred_class, recommendation_policy[0])
+                
+                # Display results in a nice box
+                st.markdown("---")
+                st.subheader("📊 Analysis Results")
+                
+                # Color-coded result based on class
+                if pred_class in [0, 1]:
+                    color = "#28a745"  # green
+                    bg_color = "#d4edda"
+                    icon = "✅"
+                    border_color = "#c3e6cb"
+                elif pred_class == 2:
+                    color = "#fd7e14"  # orange
+                    bg_color = "#fff3cd"
+                    icon = "⚠️"
+                    border_color = "#ffeeba"
+                elif pred_class == 3:
+                    color = "#dc3545"  # red
+                    bg_color = "#f8d7da"
+                    icon = "🚫"
+                    border_color = "#f5c6cb"
+                else:
+                    color = "#721c24"  # dark red
+                    bg_color = "#f8d7da"
+                    icon = "🔴"
+                    border_color = "#f5c6cb"
+                
+                # Result card
+                st.markdown(f"""
+                <div style="padding: 25px; border-radius: 10px; background-color: {bg_color}; border: 2px solid {border_color}; margin: 10px 0;">
+                    <h2 style="color: {color}; margin-top: 0;">{icon} Class {pred_class}</h2>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Recommended Action:</strong> {policy['action']}</p>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Priority:</strong> {policy['priority']}</p>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Reason:</strong> {policy['reason']}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Confidence meter
+                st.markdown(f"**Confidence:** {confidence:.1%}")
+                st.progress(float(confidence))
+                
+                # Show tweet that was analyzed
+                with st.expander("📝 Analyzed Tweet"):
+                    st.write(tweet_input)
+                
+            except Exception as e:
+                st.error(f"Error analyzing tweet: {str(e)}")
     
-    else:  # Upload CSV
-        st.write("Upload your own CSV file with tweets to analyze.")
-        uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-        
-        if uploaded_file is not None:
-            df_batch = pd.read_csv(uploaded_file)
-            st.write("Preview of uploaded data:")
-            st.dataframe(df_batch.head())
-            
-            # Let user select the tweet column
-            tweet_column = st.selectbox(
-                "Select the column containing tweets:",
-                df_batch.columns.tolist()
-            )
-            
-            if st.button("Analyze Uploaded Batch"):
-                with st.spinner(f"Analyzing {len(df_batch)} tweets..."):
-                    if model is not None:
-                        results = []
-                        for idx, tweet in enumerate(df_batch[tweet_column].head(50)):  # Limit to 50
-                            try:
-                                tweet_vector = vectorizer.transform([str(tweet)])
-                                tweet_scaled = scaler.transform(tweet_vector)
-                                pred = model.predict(tweet_scaled)[0]
-                                results.append({
-                                    'Tweet': str(tweet)[:50] + "..." if len(str(tweet)) > 50 else str(tweet),
-                                    'Predicted': pred,
-                                    'Action': recommendation_policy[pred]['action'][:20]
-                                })
-                            except:
-                                results.append({
-                                    'Tweet': str(tweet)[:50] + "...",
-                                    'Predicted': 'Error',
-                                    'Action': 'Error'
-                                })
-                        
-                        results_df = pd.DataFrame(results)
-                        st.success(f"✅ Analyzed {len(results_df)} tweets!")
-                        st.dataframe(results_df)
-                        
-                        # Download button
-                        csv = results_df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Results",
-                            data=csv,
-                            file_name="upload_results.csv",
-                            mime="text/csv"
-                        )
-                    else:
-                        # Simulated results
-                        results_df = pd.DataFrame({
-                            'Tweet': df_batch[tweet_column].head(10).astype(str).str[:50] + "...",
-                            'Predicted': [2, 0, 3, 4, 2, 0, 3, 2, 4, 0][:10],
-                            'Action': ['Flag', 'Allow', 'Hide', 'Remove', 'Flag', 'Allow', 'Hide', 'Flag', 'Remove', 'Allow'][:10]
-                        })
-                        st.dataframe(results_df)
-
-with col2:
-    st.header("📈 Model Performance")
+    elif analyze_button:
+        st.warning("Please enter a tweet to analyze.")
     
-    # Display confusion matrix
-    st.subheader("Confusion Matrix - Random Forest")
-    cm = np.array([[1948, 0, 19, 0],
-                   [26, 72, 2, 0],
-                   [9, 4, 10, 0],
-                   [24, 1, 0, 108]])
+    # Sample tweets for quick testing
+    st.markdown("---")
+    st.subheader("🧪 Try Sample Tweets")
     
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                xticklabels=['Class 0', 'Class 2', 'Class 3', 'Class 4'],
-                yticklabels=['Class 0', 'Class 2', 'Class 3', 'Class 4'])
-    plt.title('Random Forest Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
-    st.pyplot(fig)
-    
-    # Performance metrics
-    st.subheader("Performance Metrics")
-    metrics_data = {
-        'Metric': ['Accuracy', 'Precision (macro)', 'Recall (macro)', 'F1-Score (macro)'],
-        'Value': ['96.2%', '0.81', '0.74', '0.77']
+    sample_tweets = {
+        "Clean": "I love this beautiful day! 😊",
+        "Offensive": "This is a shitty post",
+        "Hate Speech": "Go back to your country you nigger",
+        "Threat": "I'm going to kill you"
     }
-    metrics_df = pd.DataFrame(metrics_data)
-    st.dataframe(metrics_df, use_container_width=True)
     
-    # Model comparison
-    st.subheader("Model Comparison")
-    comparison_data = {
-        'Model': ['Decision Tree', 'Random Forest', 'KNN', 'Naive Bayes', 'SVM'],
-        'Accuracy': ['99.4%', '96.2%', '89.7%', '88.5%', '99.0%']
-    }
-    comparison_df = pd.DataFrame(comparison_data)
-    st.dataframe(comparison_df, use_container_width=True)
+    # Create buttons for sample tweets
+    sample_cols = st.columns(4)
+    for idx, (category, tweet) in enumerate(sample_tweets.items()):
+        with sample_cols[idx]:
+            if st.button(f"📋 {category}", key=f"sample_{idx}", use_container_width=True):
+                # Set the text area value (this is a workaround)
+                st.session_state['sample_tweet'] = tweet
+                st.rerun()
+    
+    # Check if we have a sample tweet to load
+    if 'sample_tweet' in st.session_state:
+        tweet_input = st.session_state['sample_tweet']
+        # Clear it so it doesn't persist
+        del st.session_state['sample_tweet']
+        st.rerun()
 
-# Footer with recommendations table
+# Footer with policy guidelines
 st.markdown("---")
 st.header("📋 Moderation Policy Guidelines")
 
@@ -408,44 +245,15 @@ policy_df = pd.DataFrame([
     {"Class": "2", "Action": "Flag for moderator review", "Priority": "Medium", "Description": "Offensive language detected"},
     {"Class": "3", "Action": "Hide content and warn user", "Priority": "High", "Description": "Hate speech detected"},
     {"Class": "4", "Action": "Remove content and alert moderators", "Priority": "Critical", "Description": "Threatening or aggressive message detected"},
-    {"Class": "5", "Action": "Temporarily hide and investigate", "Priority": "High", "Description": "Other abusive behavior detected"}
 ])
 
 st.table(policy_df)
 
-# Add sample tweets for testing
+# Footer
 st.markdown("---")
-st.header("🧪 Test with Sample Tweets")
-
-sample_tweets = {
-    "Clean": "I love this beautiful day! 😊",
-    "Offensive": "This is a shitty post",
-    "Hate Speech": "Go back to your country you nigger",
-    "Threat": "I'm going to kill you"
-}
-
-cols = st.columns(4)
-for idx, (category, tweet) in enumerate(sample_tweets.items()):
-    with cols[idx]:
-        st.write(f"**{category}:**")
-        st.code(tweet)
-        if st.button(f"Test {category}", key=f"test_{idx}"):
-            if model is not None and vectorizer is not None:
-                try:
-                    tweet_vector = vectorizer.transform([tweet])
-                    tweet_scaled = scaler.transform(tweet_vector)
-                    pred = model.predict(tweet_scaled)[0]
-                    policy = recommendation_policy.get(pred, recommendation_policy[0])
-                    st.info(f"Class {pred}: {policy['action']}")
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-            else:
-                # Simulated
-                if category == "Clean":
-                    st.success("✅ Class 0 - Allow content")
-                elif category == "Offensive":
-                    st.warning("⚠️ Class 2 - Flag for review")
-                elif category == "Hate Speech":
-                    st.error("🚫 Class 3 - Hide and warn user")
-                else:
-                    st.error("🔴 Class 4 - Remove and alert moderators")
+st.markdown(
+    "<div style='text-align: center; color: gray; padding: 10px;'>"
+    "Tweet Moderation System v1.0 | Powered by Machine Learning"
+    "</div>", 
+    unsafe_allow_html=True
+)
