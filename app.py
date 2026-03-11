@@ -24,44 +24,83 @@ This application analyzes tweets for harmful content and provides automated mode
 Enter a tweet below to get instant analysis and suggested actions.
 """)
 
-# Load the saved models
+# Function to find model files in different possible locations
 @st.cache_resource
-def load_models():
-    """Load trained models from local folder"""
-    try:
-        # Check if models folder exists
-        if not os.path.exists('models'):
-            st.sidebar.error("❌ 'models' folder not found!")
-            return None, None, None, None
-        
-        # Load all model files
-        vectorizer = joblib.load('models/vectorizer.pkl')
-        scaler = joblib.load('models/scaler.pkl')
-        model = joblib.load('models/random_forest_model.pkl')
-        policy = joblib.load('models/recommendation_policy.pkl')
-        
-        st.sidebar.success("✅ Models loaded successfully!")
-        return vectorizer, scaler, model, policy
-        
-    except FileNotFoundError as e:
-        st.sidebar.error(f"❌ Model file not found: {str(e)}")
-        return None, None, None, None
-    except Exception as e:
-        st.sidebar.error(f"❌ Error loading models: {str(e)}")
-        return None, None, None, None
-
-# Load data for statistics (optional)
-@st.cache_data
-def load_data():
-    """Load data for statistics display"""
-    try:
-        possible_paths = ['Tweets_reclassified.csv', 'Tweets.csv', 'data/Tweets.csv']
-        for path in possible_paths:
-            if os.path.exists(path):
-                return pd.read_csv(path)
-        return None
-    except:
-        return None
+def find_and_load_models():
+    """Try to find and load models from different possible paths"""
+    
+    # List of possible paths to check
+    possible_model_paths = [
+        'models/',                          # models folder in current dir
+        './models/',                        # same as above
+        '../models/',                       # one level up
+        '/mount/src/midterm-machineproject/models/',  # Streamlit Cloud path
+        '',                                  # current directory
+    ]
+    
+    possible_filenames = {
+        'vectorizer': ['vectorizer.pkl', 'vectorizer.joblib'],
+        'scaler': ['scaler.pkl', 'scaler.joblib'],
+        'model': ['random_forest_model.pkl', 'random_forest_model.joblib', 'model.pkl'],
+        'policy': ['recommendation_policy.pkl', 'policy.pkl']
+    }
+    
+    # Try each path
+    for base_path in possible_model_paths:
+        try:
+            if not os.path.exists(base_path):
+                continue
+                
+            st.sidebar.write(f"Checking: {base_path}")
+            
+            # Try to load each file with different possible names
+            vectorizer = None
+            scaler = None
+            model = None
+            policy = None
+            
+            # Try vectorizer
+            for filename in possible_filenames['vectorizer']:
+                full_path = os.path.join(base_path, filename)
+                if os.path.exists(full_path):
+                    vectorizer = joblib.load(full_path)
+                    st.sidebar.write(f"✅ Found vectorizer: {full_path}")
+                    break
+            
+            # Try scaler
+            for filename in possible_filenames['scaler']:
+                full_path = os.path.join(base_path, filename)
+                if os.path.exists(full_path):
+                    scaler = joblib.load(full_path)
+                    st.sidebar.write(f"✅ Found scaler: {full_path}")
+                    break
+            
+            # Try model
+            for filename in possible_filenames['model']:
+                full_path = os.path.join(base_path, filename)
+                if os.path.exists(full_path):
+                    model = joblib.load(full_path)
+                    st.sidebar.write(f"✅ Found model: {full_path}")
+                    break
+            
+            # Try policy
+            for filename in possible_filenames['policy']:
+                full_path = os.path.join(base_path, filename)
+                if os.path.exists(full_path):
+                    policy = joblib.load(full_path)
+                    st.sidebar.write(f"✅ Found policy: {full_path}")
+                    break
+            
+            # If we found all files, return them
+            if all([vectorizer, scaler, model, policy]):
+                return vectorizer, scaler, model, policy
+                
+        except Exception as e:
+            st.sidebar.write(f"Error with path {base_path}: {str(e)}")
+            continue
+    
+    # If we get here, no models found
+    return None, None, None, None
 
 # Recommendation policy (define as fallback)
 DEFAULT_POLICY = {
@@ -73,12 +112,35 @@ DEFAULT_POLICY = {
     5: {"action": "Temporarily hide and investigate", "priority": "High", "reason": "Other abusive behavior detected"}
 }
 
-# Load models and data
-vectorizer, scaler, model, loaded_policy = load_models()
-df = load_data()
+# Load models with better error handling
+vectorizer, scaler, model, loaded_policy = find_and_load_models()
 
 # Use loaded policy or default
 recommendation_policy = loaded_policy if loaded_policy is not None else DEFAULT_POLICY
+
+# Load data for statistics (optional)
+@st.cache_data
+def load_data():
+    """Load data for statistics display"""
+    try:
+        possible_paths = [
+            'Tweets_reclassified.csv', 
+            'Tweets.csv', 
+            'data/Tweets.csv',
+            './Tweets_reclassified.csv',
+            '../Tweets_reclassified.csv'
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                df = pd.read_csv(path)
+                st.sidebar.success(f"✅ Loaded data from {path}")
+                return df
+        return None
+    except Exception as e:
+        st.sidebar.write(f"Data loading error: {str(e)}")
+        return None
+
+df = load_data()
 
 # Sidebar for information
 with st.sidebar:
@@ -91,20 +153,30 @@ with st.sidebar:
     - **Class 4**: Threats - Remove and alert moderators
     
     **Model Used:** Random Forest Classifier
-    **Accuracy:** 96.2%
     """)
     
     if model is not None:
         st.success("✅ Model ready")
+        if hasattr(model, 'get_params'):
+            st.write(f"Model type: {type(model).__name__}")
     else:
         st.warning("⚠️ Using rule-based fallback")
+        st.info("""
+        To use the actual ML model:
+        1. Create a 'models' folder
+        2. Add your .pkl files:
+           - vectorizer.pkl
+           - scaler.pkl  
+           - random_forest_model.pkl
+           - recommendation_policy.pkl
+        """)
     
     # Dataset Statistics (if available)
     if df is not None:
         st.header("📁 Dataset Statistics")
+        st.write(f"**Total tweets:** {len(df)}")
         if 'label' in df.columns:
             class_counts = df['label'].value_counts().sort_index()
-            st.write(f"**Total tweets:** {len(df)}")
             st.write("**Class Distribution:**")
             for cls, count in class_counts.items():
                 st.write(f"- Class {cls}: {count} ({count/len(df)*100:.1f}%)")
@@ -240,20 +312,14 @@ with col2:
     for idx, (category, tweet) in enumerate(sample_tweets.items()):
         with sample_cols[idx]:
             if st.button(f"📋 {category}", key=f"sample_{idx}", use_container_width=True):
-                # Set the session state and rerun
                 st.session_state.tweet_input = tweet
                 st.rerun()
     
-    # If there's a tweet in session state from sample button, analyze it automatically
-    if 'auto_analyze' not in st.session_state:
-        st.session_state.auto_analyze = False
-    
-    # Check if we should auto-analyze (after sample button click)
-    if st.session_state.tweet_input and not analyze_button and not st.session_state.auto_analyze:
-        st.session_state.auto_analyze = True
-        analyze_tweet(st.session_state.tweet_input)
-    elif not st.session_state.tweet_input:
-        st.session_state.auto_analyze = False
+    # Auto-analyze if there's a tweet from sample button
+    if st.session_state.tweet_input and st.session_state.tweet_input != "":
+        if 'last_analyzed' not in st.session_state or st.session_state.last_analyzed != st.session_state.tweet_input:
+            st.session_state.last_analyzed = st.session_state.tweet_input
+            analyze_tweet(st.session_state.tweet_input)
 
 # Footer with policy guidelines
 st.markdown("---")
