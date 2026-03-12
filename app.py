@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import re
 import joblib
 import os
-import re
 
 # Page configuration
 st.set_page_config(
@@ -25,44 +23,7 @@ This application analyzes tweets for harmful content and provides automated mode
 Enter a tweet below to get instant analysis and suggested actions.
 """)
 
-# Load the saved models
-@st.cache_resource
-def load_models():
-    """Load trained models from local folder"""
-    try:
-        if not os.path.exists('models'):
-            st.sidebar.error("❌ 'models' folder not found!")
-            return None, None, None, None
-        
-        vectorizer = joblib.load('models/vectorizer.pkl')
-        scaler = joblib.load('models/scaler.pkl')
-        model = joblib.load('models/random_forest_model.pkl')
-        policy = joblib.load('models/recommendation_policy.pkl')
-        
-        st.sidebar.success("✅ Models loaded successfully!")
-        return vectorizer, scaler, model, policy
-        
-    except FileNotFoundError as e:
-        st.sidebar.error(f"❌ Model file not found: {str(e)}")
-        return None, None, None, None
-    except Exception as e:
-        st.sidebar.error(f"❌ Error loading models: {str(e)}")
-        return None, None, None, None
-
-# Load data for statistics (optional)
-@st.cache_data
-def load_data():
-    """Load data for statistics display"""
-    try:
-        possible_paths = ['Tweets_reclassified.csv', 'Tweets.csv', 'data/Tweets.csv']
-        for path in possible_paths:
-            if os.path.exists(path):
-                return pd.read_csv(path)
-        return None
-    except:
-        return None
-
-# Define class names based on dataset analysis
+# Define class names based on dataset analysis (from your notebook)
 CLASS_NAMES = {
     0: "Religious hate speech",
     1: "Non-abusive / General",
@@ -80,12 +41,45 @@ RECOMMENDATION_POLICY = {
     4: {"action": "Remove content", "priority": "Critical", "reason": "NSFW / Explicit content detected"}
 }
 
-# Load models and data
-vectorizer, scaler, model, loaded_policy = load_models()
-df = load_data()
+# Load the saved models
+@st.cache_resource
+def load_models():
+    """Load trained models from local folder"""
+    try:
+        if not os.path.exists('models'):
+            st.sidebar.error("❌ 'models' folder not found!")
+            return None, None, None
+        
+        vectorizer = joblib.load('models/vectorizer.pkl')
+        model = joblib.load('models/best_model.pkl')
+        policy = RECOMMENDATION_POLICY   # Use our correct policy, not the saved one
+        
+        st.sidebar.success("✅ Models loaded successfully!")
+        return vectorizer, model, policy
+        
+    except FileNotFoundError as e:
+        st.sidebar.error(f"❌ Model file not found: {str(e)}")
+        return None, None, None
+    except Exception as e:
+        st.sidebar.error(f"❌ Error loading models: {str(e)}")
+        return None, None, None
 
-# Use loaded policy or default (but we'll use our defined one for consistency)
-recommendation_policy = RECOMMENDATION_POLICY  # override with our correct policy
+# Load data for statistics (optional)
+@st.cache_data
+def load_data():
+    """Load data for statistics display"""
+    try:
+        possible_paths = ['Tweets_reclassified.csv', 'Tweets.csv', 'data/Tweets.csv']
+        for path in possible_paths:
+            if os.path.exists(path):
+                return pd.read_csv(path)
+        return None
+    except:
+        return None
+
+# Load models and data
+vectorizer, model, policy = load_models()
+df = load_data()
 
 # Sidebar for information
 with st.sidebar:
@@ -98,8 +92,8 @@ with st.sidebar:
     - **Class 3:** Discrimination / Threats – Remove and alert moderators
     - **Class 4:** NSFW / Explicit – Remove content
 
-    **Model Used:** Random Forest Classifier  
-    **Accuracy:** 96.2%
+    **Model Used:** SVM (best performer)  
+    **Macro F1:** 0.66
     """)
     
     if model is not None:
@@ -120,10 +114,8 @@ with st.sidebar:
 # Main content - Single tweet analysis only
 st.header("📝 Tweet Analysis")
 
-# Create a nice layout
 col1, col2, col3 = st.columns([1, 6, 1])
 with col2:
-    # Tweet input - using session state
     tweet_input = st.text_area(
         "Enter your tweet to analyze:",
         height=150,
@@ -138,6 +130,17 @@ with col2:
     with col_btn2:
         analyze_button = st.button("🔍 Analyze Tweet", type="primary", use_container_width=True)
     
+    # Function to clean tweet (same as notebook)
+    def clean_tweet(text):
+        if not isinstance(text, str):
+            return ""
+        text = text.lower()
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+        text = re.sub(r'@\w+', '', text)
+        text = re.sub(r'[^a-z\s]', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+    
     # Function to analyze tweet
     def analyze_tweet(tweet_text):
         if not tweet_text:
@@ -146,54 +149,39 @@ with col2:
         
         with st.spinner("Analyzing..."):
             try:
-                # Clean tweet (basic cleaning)
-                def clean_tweet(text):
-                    if not isinstance(text, str):
-                        return ""
-                    text = text.lower()
-                    text = re.sub(r'http\S+|www\S+|https\S+', '', text)
-                    text = re.sub(r'@\w+', '', text)
-                    text = re.sub(r'[^a-z\s]', '', text)
-                    text = re.sub(r'\s+', ' ', text).strip()
-                    return text
-                
                 clean = clean_tweet(tweet_text)
-                
                 if not clean:
                     st.warning("Tweet became empty after cleaning.")
                     return
                 
-                if model is not None and vectorizer is not None and scaler is not None:
-                    # Use actual trained model
-                    tweet_vector = vectorizer.transform([clean])
-                    tweet_scaled = scaler.transform(tweet_vector)
-                    pred_class = model.predict(tweet_scaled)[0]
+                if model is not None and vectorizer is not None:
+                    vec = vectorizer.transform([clean])
+                    # SVM can handle sparse input directly
+                    pred_class = model.predict(vec)[0]
                     
+                    # Get confidence if available
                     if hasattr(model, "predict_proba"):
-                        probs = model.predict_proba(tweet_scaled)[0]
+                        probs = model.predict_proba(vec)[0]
                         confidence = max(probs)
                     else:
                         confidence = 0.95
                 else:
-                    # Rule-based fallback
+                    # Rule-based fallback (simplified)
                     tweet_lower = tweet_text.lower()
                     threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb']
                     hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
-                    offense_words = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'dick', 'pussy']
-                    
+                    # ... (you can expand fallback if desired)
                     if any(word in tweet_lower for word in threat_words):
                         pred_class = 3
                     elif any(word in tweet_lower for word in hate_words):
                         pred_class = 2
-                    elif any(word in tweet_lower for word in offense_words):
-                        pred_class = 1  # offensive but not racist/threat? but class 1 is non-abusive, maybe fallback to 1?
                     else:
                         pred_class = 1
                     confidence = 0.85
                 
                 # Get recommendation and class description
-                policy = recommendation_policy.get(pred_class, recommendation_policy[1])
-                class_desc = CLASS_NAMES.get(pred_class, "Unknown")
+                res = policy.get(pred_class, policy[1])
+                desc = CLASS_NAMES.get(pred_class, "Unknown")
                 
                 # Display results
                 st.markdown("---")
@@ -221,13 +209,12 @@ with col2:
                     icon = "🔴"
                     border_color = "#f5c6cb"
                 
-                # Result card with class description
                 st.markdown(f"""
                 <div style="padding: 25px; border-radius: 10px; background-color: {bg_color}; border: 2px solid {border_color}; margin: 10px 0;">
-                    <h2 style="color: {color}; margin-top: 0;">{icon} Class {pred_class}: {class_desc}</h2>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Recommended Action:</strong> {policy['action']}</p>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Priority:</strong> {policy['priority']}</p>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Reason:</strong> {policy['reason']}</p>
+                    <h2 style="color: {color}; margin-top: 0;">{icon} Class {pred_class}: {desc}</h2>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Recommended Action:</strong> {res['action']}</p>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Priority:</strong> {res['priority']}</p>
+                    <p style="font-size: 18px; margin: 10px 0;"><strong>Reason:</strong> {res['reason']}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
