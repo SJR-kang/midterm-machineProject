@@ -52,7 +52,8 @@ def load_models():
         
         vectorizer = joblib.load('models/vectorizer.pkl')
         model = joblib.load('models/best_model.pkl')
-        policy = RECOMMENDATION_POLICY   # Use our correct policy, not the saved one
+        # We use our defined policy, not the saved one
+        policy = RECOMMENDATION_POLICY
         
         st.sidebar.success("✅ Models loaded successfully!")
         return vectorizer, model, policy
@@ -170,7 +171,6 @@ with col2:
                     tweet_lower = tweet_text.lower()
                     threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb']
                     hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
-                    # ... (you can expand fallback if desired)
                     if any(word in tweet_lower for word in threat_words):
                         pred_class = 3
                     elif any(word in tweet_lower for word in hate_words):
@@ -187,24 +187,24 @@ with col2:
                 st.markdown("---")
                 st.subheader("📊 Analysis Results")
                 
-                # Color coding based on class
+                # Color coding based on class – with dark text (#212529) for readability
                 if pred_class == 1:
-                    color = "#28a745"  # green
-                    bg_color = "#d4edda"
+                    color = "#212529"      # dark text
+                    bg_color = "#d4edda"   # light green
                     icon = "✅"
                     border_color = "#c3e6cb"
                 elif pred_class == 0 or pred_class == 2:
-                    color = "#fd7e14"  # orange
-                    bg_color = "#fff3cd"
+                    color = "#212529"
+                    bg_color = "#fff3cd"   # light orange
                     icon = "⚠️"
                     border_color = "#ffeeba"
                 elif pred_class == 3:
-                    color = "#dc3545"  # red
-                    bg_color = "#f8d7da"
+                    color = "#212529"
+                    bg_color = "#f8d7da"   # light red
                     icon = "🚫"
                     border_color = "#f5c6cb"
                 else:  # class 4
-                    color = "#721c24"  # dark red
+                    color = "#212529"
                     bg_color = "#f8d7da"
                     icon = "🔴"
                     border_color = "#f5c6cb"
@@ -212,9 +212,9 @@ with col2:
                 st.markdown(f"""
                 <div style="padding: 25px; border-radius: 10px; background-color: {bg_color}; border: 2px solid {border_color}; margin: 10px 0;">
                     <h2 style="color: {color}; margin-top: 0;">{icon} Class {pred_class}: {desc}</h2>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Recommended Action:</strong> {res['action']}</p>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Priority:</strong> {res['priority']}</p>
-                    <p style="font-size: 18px; margin: 10px 0;"><strong>Reason:</strong> {res['reason']}</p>
+                    <p style="font-size: 18px; margin: 10px 0; color: {color};"><strong>Recommended Action:</strong> {res['action']}</p>
+                    <p style="font-size: 18px; margin: 10px 0; color: {color};"><strong>Priority:</strong> {res['priority']}</p>
+                    <p style="font-size: 18px; margin: 10px 0; color: {color};"><strong>Reason:</strong> {res['reason']}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -230,7 +230,7 @@ with col2:
     if analyze_button:
         analyze_tweet(st.session_state.tweet_input)
     
-    # Sample tweets for quick testing
+    # Sample tweets for quick testing – now properly populate the text box and trigger analysis
     st.markdown("---")
     st.subheader("🧪 Try Sample Tweets")
     
@@ -246,9 +246,11 @@ with col2:
     for idx, (category, tweet) in enumerate(sample_tweets.items()):
         with sample_cols[idx]:
             if st.button(f"📋 {category}", key=f"sample_{idx}", use_container_width=True):
+                # Set the session state and rerun – the text area will update and auto-analyze will trigger
                 st.session_state.tweet_input = tweet
                 st.rerun()
     
+    # Auto-analyze after sample button click (if not already analyzed)
     if 'auto_analyze' not in st.session_state:
         st.session_state.auto_analyze = False
     
@@ -275,7 +277,7 @@ st.table(policy_df)
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray; padding: 10px;'>"
-    "Tweet Moderation System v2.0 | Powered by Machine Learning"
+    "Tweet Moderation System v2.1 | Powered by Machine Learning"
     "</div>", 
     unsafe_allow_html=True
 )
