@@ -12,9 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state for tweet input
+# Initialize session state for tweet input and analysis trigger
 if 'tweet_input' not in st.session_state:
     st.session_state.tweet_input = ""
+if 'run_analysis' not in st.session_state:
+    st.session_state.run_analysis = False
 
 # Title and description
 st.title("🔍 AI-Powered Tweet Moderation System")
@@ -125,6 +127,7 @@ with col2:
         key="tweet_input_area"
     )
     
+    # Update session state when user types
     st.session_state.tweet_input = tweet_input
     
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
@@ -157,17 +160,15 @@ with col2:
                 
                 if model is not None and vectorizer is not None:
                     vec = vectorizer.transform([clean])
-                    # SVM can handle sparse input directly
                     pred_class = model.predict(vec)[0]
                     
-                    # Get confidence if available
                     if hasattr(model, "predict_proba"):
                         probs = model.predict_proba(vec)[0]
                         confidence = max(probs)
                     else:
                         confidence = 0.95
                 else:
-                    # Rule-based fallback (simplified)
+                    # Simplified rule-based fallback
                     tweet_lower = tweet_text.lower()
                     threat_words = ['kill', 'die', 'murder', 'shoot', 'bomb']
                     hate_words = ['nigger', 'wetback', 'spic', 'chink', 'kike', 'raghead', 'sand nigger']
@@ -179,7 +180,6 @@ with col2:
                         pred_class = 1
                     confidence = 0.85
                 
-                # Get recommendation and class description
                 res = policy.get(pred_class, policy[1])
                 desc = CLASS_NAMES.get(pred_class, "Unknown")
                 
@@ -189,18 +189,18 @@ with col2:
                 
                 # Color coding based on class – with dark text (#212529) for readability
                 if pred_class == 1:
-                    color = "#212529"      # dark text
-                    bg_color = "#d4edda"   # light green
+                    color = "#212529"
+                    bg_color = "#d4edda"
                     icon = "✅"
                     border_color = "#c3e6cb"
                 elif pred_class == 0 or pred_class == 2:
                     color = "#212529"
-                    bg_color = "#fff3cd"   # light orange
+                    bg_color = "#fff3cd"
                     icon = "⚠️"
                     border_color = "#ffeeba"
                 elif pred_class == 3:
                     color = "#212529"
-                    bg_color = "#f8d7da"   # light red
+                    bg_color = "#f8d7da"
                     icon = "🚫"
                     border_color = "#f5c6cb"
                 else:  # class 4
@@ -227,10 +227,18 @@ with col2:
             except Exception as e:
                 st.error(f"Error analyzing tweet: {str(e)}")
     
+    # Handle analyze button click
     if analyze_button:
         analyze_tweet(st.session_state.tweet_input)
+        # Reset the auto-run flag after manual click
+        st.session_state.run_analysis = False
     
-    # Sample tweets for quick testing – now properly populate the text box and trigger analysis
+    # Handle sample button click (triggered via rerun)
+    if st.session_state.run_analysis and st.session_state.tweet_input:
+        analyze_tweet(st.session_state.tweet_input)
+        st.session_state.run_analysis = False  # Reset after running
+    
+    # Sample tweets for quick testing
     st.markdown("---")
     st.subheader("🧪 Try Sample Tweets")
     
@@ -246,19 +254,10 @@ with col2:
     for idx, (category, tweet) in enumerate(sample_tweets.items()):
         with sample_cols[idx]:
             if st.button(f"📋 {category}", key=f"sample_{idx}", use_container_width=True):
-                # Set the session state and rerun – the text area will update and auto-analyze will trigger
+                # Set session state and trigger analysis on next run
                 st.session_state.tweet_input = tweet
+                st.session_state.run_analysis = True
                 st.rerun()
-    
-    # Auto-analyze after sample button click (if not already analyzed)
-    if 'auto_analyze' not in st.session_state:
-        st.session_state.auto_analyze = False
-    
-    if st.session_state.tweet_input and not analyze_button and not st.session_state.auto_analyze:
-        st.session_state.auto_analyze = True
-        analyze_tweet(st.session_state.tweet_input)
-    elif not st.session_state.tweet_input:
-        st.session_state.auto_analyze = False
 
 # Footer with policy guidelines
 st.markdown("---")
@@ -277,7 +276,7 @@ st.table(policy_df)
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray; padding: 10px;'>"
-    "Tweet Moderation System v2.1 | Powered by Machine Learning"
+    "Tweet Moderation System v2.2 | Powered by Machine Learning"
     "</div>", 
     unsafe_allow_html=True
 )
