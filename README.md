@@ -9,7 +9,7 @@ An AI-powered system that automatically classifies tweets and recommends moderat
 - Clear moderation policy guidelines
 
 ## Live Demo
-[Add your Streamlit Cloud URL here]
+https://midterm-machineproject-suohxtxmfcjfgqifn3sci9.streamlit.app/#try-sample-tweets
 
 ## Installation
 ```bash
